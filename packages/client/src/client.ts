@@ -28,6 +28,7 @@ export interface MurmurClient {
   readonly workers: WorkerInfo[];
   connect(): Promise<void>;
   disconnect(): void;
+  destroy(): void;
   requestTask(input: { model: string; input: unknown; timeoutMs?: number }): Promise<FinalResult>;
   subscribe(listener: (event: ClientEvent) => void): () => void;
 }
@@ -65,6 +66,7 @@ export function createClient(options: MurmurClientOptions): MurmurClient {
   let activeTasks = 0;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
+  let manuallyClosed = false;
 
   const listeners = new Set<(event: ClientEvent) => void>();
   const pending = new Map<RequestId, PendingRequest>();
@@ -167,13 +169,14 @@ export function createClient(options: MurmurClientOptions): MurmurClient {
     });
     socket.addEventListener("close", () => {
       socket = null;
-      setStatus("disconnected");
-      emit({ type: "disconnect", reason: "connection-closed" });
       for (const request of pending.values()) {
         clearTimeout(request.timeout);
         request.reject(new Error("connection closed"));
       }
       pending.clear();
+      if (manuallyClosed) return;
+      setStatus("disconnected");
+      emit({ type: "disconnect", reason: "connection-closed" });
       if (!disposed) {
         reconnectTimer = setTimeout(openSocket, reconnectDelayMs);
       }
@@ -199,15 +202,23 @@ export function createClient(options: MurmurClientOptions): MurmurClient {
         clearTimeout(reconnectTimer);
         reconnectTimer = null;
       }
+      manuallyClosed = false;
       openSocket();
       return Promise.resolve();
     },
     disconnect() {
-      disposed = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
+      manuallyClosed = true;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
       socket?.close();
       socket = null;
       setStatus("idle");
+    },
+    destroy() {
+      disposed = true;
+      this.disconnect();
     },
     requestTask({ model, input, timeoutMs = 30_000 }) {
       const requestId = newRequestId();

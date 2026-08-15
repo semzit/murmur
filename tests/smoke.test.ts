@@ -115,10 +115,11 @@ describe("Murmur coordinator protocol", () => {
   const clients: TestClient[] = [];
   const rawSockets: WebSocket[] = [];
 
-  const startServer = (overrides: Partial<Parameters<typeof createMurmurServer>[0]> = {}) => {
+  const startServer = async (overrides: Partial<Parameters<typeof createMurmurServer>[0]> = {}) => {
     const server = createMurmurServer({ port: 0, models: [moderationModel], ...overrides });
     servers.push(server);
-    return server.start().then((port) => `ws://localhost:${port}`);
+    const port = await server.start();
+    return { url: `ws://localhost:${port}`, port };
   };
 
   const openRawSocket = async (url: string): Promise<WebSocket> => {
@@ -140,7 +141,7 @@ describe("Murmur coordinator protocol", () => {
   });
 
   it("aggregates independent results into a consensus", async () => {
-    const url = await startServer();
+    const { url } = await startServer();
 
     const requester = makeClient(url);
     clients.push(requester);
@@ -171,7 +172,7 @@ describe("Murmur coordinator protocol", () => {
   });
 
   it("rejects tasks for unknown models", async () => {
-    const url = await startServer();
+    const { url } = await startServer();
     const requester = makeClient(url);
     clients.push(requester);
     await requester.register();
@@ -185,7 +186,7 @@ describe("Murmur coordinator protocol", () => {
   });
 
   it("rejects malformed messages", async () => {
-    const url = await startServer();
+    const { url } = await startServer();
     const ws = await openRawSocket(url);
     rawSockets.push(ws);
 
@@ -202,7 +203,7 @@ describe("Murmur coordinator protocol", () => {
   });
 
   it("finalizes with partial results once the deadline passes", async () => {
-    const url = await startServer({ defaultDeadlineMs: 250, defaultRequiredWorkers: 2 });
+    const { url } = await startServer({ defaultDeadlineMs: 250, defaultRequiredWorkers: 2 });
 
     const requester = makeClient(url);
     clients.push(requester);
@@ -226,7 +227,7 @@ describe("Murmur coordinator protocol", () => {
   });
 
   it("fails a task when no workers are available", async () => {
-    const url = await startServer();
+    const { url } = await startServer();
     const ws = await openRawSocket(url);
     rawSockets.push(ws);
 
@@ -241,5 +242,13 @@ describe("Murmur coordinator protocol", () => {
     const message = await failed;
     if (message.type !== "task_failed") throw new Error("unexpected message");
     expect(message.reason).toContain("no workers");
+  });
+
+  it("serves a health endpoint", async () => {
+    const { port } = await startServer();
+    const response = await fetch(`http://localhost:${port}/healthz`);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { status: string };
+    expect(body.status).toBe("ok");
   });
 });

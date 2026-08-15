@@ -28,8 +28,24 @@ Run from the repo root:
 | `pnpm lint`                               | ESLint                                                                     |
 | `pnpm format` / `pnpm format:check`       | Prettier write / verify                                                    |
 | `pnpm test`                               | All Vitest suites (core, client, server integration)                       |
+| `pnpm test:e2e`                           | Playwright: 3-browser distributed consensus demo                           |
+| `pnpm test:e2e:ui`                        | Playwright UI mode                                                         |
 | `pnpm --filter @murmur/core test`         | Single package                                                             |
 | `pnpm --filter tests test -t "consensus"` | Single integration test                                                    |
+
+## End-to-end tests (Playwright)
+
+The e2e suite (`e2e/consensus.spec.ts`) launches the coordinator + Vite app, opens the demo in three isolated browser contexts, and verifies the full loop: registration → task → local inference → consensus → result shown in every browser.
+
+First run only — install the browser and its OS dependencies:
+
+```bash
+pnpm exec playwright install --with-deps chromium
+```
+
+(On Linux, `--with-deps` needs root for apt packages; use `sudo` if prompted.)
+
+Playwright's `webServer` config starts the coordinator (health-checked via `GET /healthz`) and web app automatically, and reuses already-running dev servers when possible.
 
 ## Source vs. published resolution
 
@@ -56,4 +72,4 @@ pnpm --filter tests test
 
 ## CI
 
-`.github/workflows/ci.yml` runs install → typecheck → lint → format check → test → build on every push and PR.
+`.github/workflows/ci.yml` runs install → typecheck → lint → format check → test → build on every push and PR, plus a separate e2e job that installs Playwright's Chromium and runs `pnpm test:e2e` (report uploaded as an artifact on failure).

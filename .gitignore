@@ -6,3 +6,8 @@ dist/
 .turbo/
 coverage/
 *.tsbuildinfo
+test-results/
+playwright-report/
+blob-report/
+.github/
+docs/

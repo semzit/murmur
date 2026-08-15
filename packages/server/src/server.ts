@@ -1,3 +1,4 @@
+import { createServer, type Server as HttpServer } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
 import type {
   ClientCapabilities,
@@ -53,6 +54,9 @@ export function createMurmurServer(options: MurmurServerOptions): MurmurServer {
   const workers = new Map<ClientId, WorkerRecord>();
   const tasks = new Map<TaskId, TaskRecord>();
   let wss: WebSocketServer | null = null;
+  let httpServer: HttpServer | null = null;
+
+  const healthPayload = () => JSON.stringify({ status: "ok", workers: workerList().length, tasks: tasks.size });
 
   const model = (name: string): ModelMetadata | null => options.models.find((m) => m.name === name) ?? null;
 
@@ -160,11 +164,21 @@ export function createMurmurServer(options: MurmurServerOptions): MurmurServer {
     },
     start() {
       return new Promise<number>((resolve) => {
-        wss = new WebSocketServer({ port: options.port }, () => {
-          const address = wss?.address();
+        httpServer = createServer((req, res) => {
+          if (req.url === "/healthz" || req.url === "/healthz/") {
+            res.writeHead(200, { "content-type": "application/json" });
+            res.end(healthPayload());
+            return;
+          }
+          res.writeHead(404);
+          res.end();
+        });
+        httpServer.listen(options.port, () => {
+          const address = httpServer?.address();
           const boundPort = typeof address === "object" && address ? address.port : options.port;
           resolve(boundPort);
         });
+        wss = new WebSocketServer({ server: httpServer });
         wss.on("connection", (socket) => {
           let clientId: ClientId | null = null;
 
@@ -239,8 +253,10 @@ export function createMurmurServer(options: MurmurServerOptions): MurmurServer {
     stop() {
       return new Promise<void>((resolve) => {
         for (const record of tasks.values()) clearTimeout(record.deadlineTimer);
-        wss?.close(() => resolve());
+        wss?.close();
         wss = null;
+        httpServer?.close(() => resolve());
+        httpServer = null;
       });
     },
   };
