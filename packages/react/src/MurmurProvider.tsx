@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { FinalResult, InferenceTask, WorkerInfo } from "@murmur/core";
+import type { RuntimeStatus } from "@murmur/runtime";
 import {
   createClient,
   type MurmurClient,
@@ -14,6 +15,7 @@ export interface MurmurContextValue {
   workers: WorkerInfo[];
   recentTasks: InferenceTask[];
   completions: FinalResult[];
+  runtimeStatus: RuntimeStatus | null;
   requestTask: (input: { model: string; input: unknown; timeoutMs?: number }) => Promise<FinalResult>;
 }
 
@@ -35,6 +37,7 @@ export function MurmurProvider({ coordinator, options, children }: MurmurProvide
   const [workers, setWorkers] = useState<WorkerInfo[]>([]);
   const [recentTasks, setRecentTasks] = useState<InferenceTask[]>([]);
   const [completions, setCompletions] = useState<FinalResult[]>([]);
+  const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatus | null>(null);
 
   useEffect(() => {
     const client = clientRef.current;
@@ -54,6 +57,9 @@ export function MurmurProvider({ coordinator, options, children }: MurmurProvide
           break;
         case "complete":
           setCompletions((prev) => [event.final, ...prev].slice(0, 20));
+          break;
+        case "runtime_status":
+          setRuntimeStatus(event.status);
           break;
       }
     };
@@ -79,9 +85,10 @@ export function MurmurProvider({ coordinator, options, children }: MurmurProvide
       workers,
       recentTasks,
       completions,
+      runtimeStatus,
       requestTask,
     }),
-    [status, workers, recentTasks, completions, requestTask],
+    [status, workers, recentTasks, completions, runtimeStatus, requestTask],
   );
 
   return <MurmurContext.Provider value={value}>{children}</MurmurContext.Provider>;

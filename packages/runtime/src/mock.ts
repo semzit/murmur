@@ -1,9 +1,4 @@
-export interface InferenceRuntime {
-  readonly id: string;
-  load(model: string): Promise<void>;
-  infer(input: unknown): Promise<{ output: unknown; duration: number }>;
-  dispose(): Promise<void>;
-}
+import type { InferenceRuntime } from "./types.ts";
 
 const hashString = (value: string): number => {
   let h = 0;
@@ -15,11 +10,15 @@ const hashString = (value: string): number => {
 
 export class MockRuntime implements InferenceRuntime {
   readonly id = "mock";
+  readonly status = null;
+  private readonly salt: string;
 
-  constructor(private readonly salt = Math.random().toString(36).slice(2, 10)) {}
+  constructor(salt = Math.random().toString(36).slice(2, 10)) {
+    this.salt = salt;
+  }
 
-  async load(): Promise<void> {
-    await new Promise((r) => setTimeout(r, 50));
+  async load(_model: string): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 50));
   }
 
   async infer(input: unknown): Promise<{ output: unknown; duration: number }> {
@@ -27,11 +26,16 @@ export class MockRuntime implements InferenceRuntime {
     const started = performance.now();
     const serialized = this.salt + ":" + JSON.stringify(input);
     const h = hashString(serialized);
-    const noise = ((h >> 16) & 0xff) / 255;
-    const score = Math.max(0.02, Math.min(0.98, noise));
+    const score = Math.max(0.02, Math.min(0.98, ((h >> 16) & 0xff) / 255));
     const duration = 40 + (h % 180);
     const elapsed = Math.max(duration, performance.now() - started);
-    return { output: score, duration: elapsed };
+    return {
+      output: {
+        label: score >= 0.5 ? "unsafe" : "safe",
+        score,
+      },
+      duration: elapsed,
+    };
   }
 
   async dispose(): Promise<void> {}

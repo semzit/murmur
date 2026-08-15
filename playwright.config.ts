@@ -18,13 +18,13 @@ export default defineConfig({
     {
       command: "pnpm exec tsx examples/react-demo/server.ts",
       url: `http://localhost:${COORDINATOR_PORT}/healthz`,
-      reuseExistingServer: true,
+      reuseExistingServer: !process.env.CI,
       timeout: 30_000,
     },
     {
       command: "pnpm --filter react-demo exec vite --host",
       url: `http://localhost:${WEB_PORT}`,
-      reuseExistingServer: true,
+      reuseExistingServer: !process.env.CI,
       timeout: 60_000,
     },
   ],

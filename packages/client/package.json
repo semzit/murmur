@@ -33,7 +33,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@murmur/core": "workspace:*"
+    "@murmur/core": "workspace:*",
+    "@murmur/runtime": "workspace:*"
   },
   "devDependencies": {
     "jsdom": "^26.0.0",

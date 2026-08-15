@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { useMurmur } from "@murmur/react";
+import type { ClassificationOutput } from "@murmur/runtime";
+import { moderateLabel } from "./moderationPolicy.ts";
 
 const SAMPLE_IMAGES = [
+  "/models/fixtures/cat.jpg",
   "https://picsum.photos/seed/murmur-a/256",
   "https://picsum.photos/seed/murmur-b/256",
-  "https://picsum.photos/seed/murmur-c/256",
 ];
 
 const statusColor: Record<string, string> = {
@@ -14,18 +16,29 @@ const statusColor: Record<string, string> = {
   disconnected: "#ef4444",
 };
 
+const shortLabel = (label: string): string => label.split(",")[0] ?? label;
+
+const asClassification = (output: unknown): ClassificationOutput | null => {
+  if (typeof output !== "object" || output === null) return null;
+  const candidate = output as Partial<ClassificationOutput>;
+  return typeof candidate.label === "string" && typeof candidate.score === "number"
+    ? (candidate as ClassificationOutput)
+    : null;
+};
+
 export function App() {
   const murmur = useMurmur();
   const [image, setImage] = useState(SAMPLE_IMAGES[0]!);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const latest = murmur.completions[0];
+  const verdict = latest?.label ? moderateLabel(latest.label) : null;
 
   const runTask = async () => {
     setRunning(true);
     setError(null);
     try {
-      await murmur.requestTask({ model: "moderation-v1", input: image, timeoutMs: 15_000 });
+      await murmur.requestTask({ model: "moderation-v1", input: image, timeoutMs: 60_000 });
     } catch (err) {
       setError(err instanceof Error ? err.message : "task failed");
     } finally {
@@ -39,6 +52,11 @@ export function App() {
         <h1 style={{ margin: 0, fontSize: 22 }}>Murmur</h1>
         <span style={{ fontSize: 12, color: statusColor[murmur.status] ?? "#9ca3af" }}>● {murmur.status}</span>
         <span style={{ fontSize: 12, color: "#9ca3af", fontFamily: "monospace" }}>{murmur.clientId?.slice(0, 8)}</span>
+        {murmur.runtimeStatus && (
+          <span style={{ fontSize: 12, color: "#9ca3af" }}>
+            {murmur.runtimeStatus.backend} · model loaded in {(murmur.runtimeStatus.loadMs / 1000).toFixed(1)}s
+          </span>
+        )}
       </header>
 
       <section style={{ marginBottom: 24 }}>
@@ -76,7 +94,7 @@ export function App() {
                 fontSize: 12,
               }}
             >
-              {url.split("/seed/")[1]}
+              {url.startsWith("/") ? "cat fixture" : url.split("/seed/")[1]}
             </button>
           ))}
           <input
@@ -117,42 +135,50 @@ export function App() {
         <h2 style={{ fontSize: 16, margin: "0 0 8px" }}>Latest consensus</h2>
         {latest ? (
           <div style={{ border: "1px solid #27272a", borderRadius: 10, padding: 16 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
               <span
                 style={{
                   padding: "6px 14px",
                   borderRadius: 999,
                   fontSize: 14,
                   fontWeight: 600,
-                  background: latest.label === "unsafe" ? "#7f1d1d" : "#14532d",
-                  color: latest.label === "unsafe" ? "#fecaca" : "#bbf7d0",
+                  background: verdict?.verdict === "unsafe" ? "#7f1d1d" : "#14532d",
+                  color: verdict?.verdict === "unsafe" ? "#fecaca" : "#bbf7d0",
                 }}
               >
-                {latest.label ?? String(latest.value)}
+                {verdict?.verdict ?? "pending"}
               </span>
-              <span style={{ fontSize: 20, fontWeight: 700 }}>{latest.value.toFixed(3)}</span>
+              <span style={{ fontSize: 15, fontWeight: 600, maxWidth: 420 }} title={latest.label}>
+                {latest.label}
+              </span>
               <span style={{ color: "#9ca3af", fontSize: 12 }}>
-                {latest.workers} workers · agreement {Math.round(latest.agreement * 100)}%
+                {latest.workers} workers · agreement {Math.round(latest.agreement * 100)}% · mean confidence{" "}
+                {latest.value.toFixed(2)}
               </span>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 8 }}>
-              {latest.results.map((r) => (
-                <div
-                  key={r.clientId}
-                  style={{ border: "1px solid #27272a", borderRadius: 8, padding: 10, fontSize: 12 }}
-                >
-                  <div style={{ fontFamily: "monospace", color: "#e5e7eb" }}>{r.clientId.slice(0, 8)}</div>
-                  <div>
-                    score <b>{Number(r.output).toFixed(3)}</b>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 8 }}>
+              {latest.results.map((r) => {
+                const classification = asClassification(r.output);
+                return (
+                  <div
+                    key={r.clientId}
+                    style={{ border: "1px solid #27272a", borderRadius: 8, padding: 10, fontSize: 12 }}
+                  >
+                    <div style={{ fontFamily: "monospace", color: "#e5e7eb" }}>{r.clientId.slice(0, 8)}</div>
+                    <div title={classification?.label ?? ""}>
+                      {classification ? shortLabel(classification.label) : "—"}{" "}
+                      <b>{classification ? classification.score.toFixed(2) : "—"}</b>
+                    </div>
+                    <div style={{ color: "#9ca3af" }}>{Math.round(r.duration)}ms</div>
                   </div>
-                  <div style={{ color: "#9ca3af" }}>{Math.round(r.duration)}ms</div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ) : (
           <p style={{ color: "#9ca3af", fontSize: 13 }}>
-            No tasks completed yet. Open this page in 3 tabs, then run a task.
+            No tasks completed yet. Open this page in 3 tabs, then run a task — each browser classifies the image
+            locally with the ONNX model.
           </p>
         )}
       </section>
@@ -168,12 +194,13 @@ export function App() {
                 key={c.taskId}
                 style={{ padding: "8px 0", borderBottom: "1px solid #1f1f23", display: "flex", gap: 16 }}
               >
-                <span style={{ color: c.label === "unsafe" ? "#f87171" : "#4ade80" }}>
-                  {c.label ?? String(c.value)}
+                <span style={{ color: moderateLabel(c.label ?? "").verdict === "unsafe" ? "#f87171" : "#4ade80" }}>
+                  {moderateLabel(c.label ?? "").verdict}
                 </span>
+                <span title={c.label}>{c.label ? shortLabel(c.label) : "—"}</span>
                 <span style={{ color: "#9ca3af", fontFamily: "monospace" }}>{c.taskId.slice(0, 8)}</span>
                 <span style={{ color: "#9ca3af" }}>
-                  {c.value.toFixed(3)} · {c.workers} workers
+                  {c.workers} workers · {Math.round(c.agreement * 100)}% agreement
                 </span>
               </li>
             ))}

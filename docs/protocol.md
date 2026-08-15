@@ -98,27 +98,29 @@ Model metadata:
 }
 ```
 
-**Model integrity must be verified (SHA-256) before execution.**
+**Model integrity must be verified (SHA-256) before execution** — the runtime computes the digest of downloaded bytes with `crypto.subtle` and rejects mismatches (tested).
+
+## Task assignment
+
+Workers advertise capabilities in `HELLO` (backends, runtime, model versions). The coordinator only assigns a task to workers whose advertised runtime matches the model's `runtime` field — a browser running an incompatible runtime is never asked to evaluate a task.
 
 ## Consensus / aggregation
 
-Simple first version:
-
-```
-Client A: safe     Client B: safe     Client C: unsafe
-Client D: safe     Client E: safe
-
-Result: SAFE
-Confidence: 80%
-```
-
 Strategies (pluggable):
 
+- Majority vote (categorical outputs: `{ label, score }` per worker)
 - Mean
 - Median
 - Trimmed mean
-- Majority vote
-- Weighted vote
+
+Winner selection for majority: most votes; ties broken by highest mean confidence.
+
+```
+Client A: tabby, tabby cat   Client B: tabby, tabby cat   Client C: golden retriever
+
+Result: tabby, tabby cat
+Agreement: 67%
+```
 
 ```ts
 interface Aggregator<T> {

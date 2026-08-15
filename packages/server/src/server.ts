@@ -17,6 +17,7 @@ export interface MurmurServerOptions {
   models: ModelMetadata[];
   defaultRequiredWorkers?: number;
   defaultDeadlineMs?: number;
+  workerHeartbeatMs?: number;
 }
 
 export interface MurmurServer {
@@ -33,6 +34,7 @@ interface WorkerRecord {
   socket: WebSocket;
   busy: boolean;
   healthy: boolean;
+  isAlive: boolean;
 }
 
 interface TaskRecord extends TaskState {
@@ -55,8 +57,17 @@ export function createMurmurServer(options: MurmurServerOptions): MurmurServer {
   const tasks = new Map<TaskId, TaskRecord>();
   let wss: WebSocketServer | null = null;
   let httpServer: HttpServer | null = null;
+  let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
-  const healthPayload = () => JSON.stringify({ status: "ok", workers: workerList().length, tasks: tasks.size });
+  const healthPayload = () => {
+    const byStatus = new Map<string, number>();
+    for (const task of tasks.values()) byStatus.set(task.status, (byStatus.get(task.status) ?? 0) + 1);
+    return JSON.stringify({
+      status: "ok",
+      workers: workerList().length,
+      tasks: Object.fromEntries(byStatus),
+    });
+  };
 
   const model = (name: string): ModelMetadata | null => options.models.find((m) => m.name === name) ?? null;
 
@@ -126,7 +137,7 @@ export function createMurmurServer(options: MurmurServerOptions): MurmurServer {
     tasks.set(id, record);
 
     const recipients = [...workers.values()]
-      .filter((w) => w.healthy && !w.busy)
+      .filter((w) => w.healthy && !w.busy && w.capabilities.runtime === metadata.runtime)
       .slice(0, Math.max(1, requiredFor(record)));
 
     if (recipients.length > 0) {
@@ -200,6 +211,7 @@ export function createMurmurServer(options: MurmurServerOptions): MurmurServer {
                   socket,
                   busy: false,
                   healthy: true,
+                  isAlive: true,
                 });
                 send(socket, { type: "registered", clientId });
                 broadcastWorkers();
@@ -246,13 +258,33 @@ export function createMurmurServer(options: MurmurServerOptions): MurmurServer {
             }
           });
 
+          socket.on("pong", () => {
+            const record = clientId ? workers.get(clientId) : undefined;
+            if (record) record.isAlive = true;
+          });
+
           socket.on("error", () => socket.close());
         });
+
+        heartbeatTimer = setInterval(() => {
+          for (const worker of [...workers.values()]) {
+            if (!worker.isAlive) {
+              workers.delete(worker.clientId);
+              worker.socket.terminate();
+              continue;
+            }
+            worker.isAlive = false;
+            worker.socket.ping();
+          }
+          broadcastWorkers();
+        }, options.workerHeartbeatMs ?? 30_000);
       });
     },
     stop() {
       return new Promise<void>((resolve) => {
         for (const record of tasks.values()) clearTimeout(record.deadlineTimer);
+        if (heartbeatTimer) clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
         wss?.close();
         wss = null;
         httpServer?.close(() => resolve());

@@ -46,14 +46,15 @@
 ### Murmur Coordinator (server)
 
 - Register clients
-- Maintain active workers
+- Maintain active workers (with heartbeat: dead connections are detected and dropped)
 - Create tasks
-- Assign tasks
+- Assign tasks to workers matching the model's runtime capability
 - Track task state
 - Request redundant inference
 - Aggregate results
 - Detect unreliable workers
 - Return final results
+- Serve `GET /healthz` (status, worker count, task counts)
 
 ### Murmur Model Runtime
 
@@ -68,25 +69,33 @@ Potential technologies: ONNX Runtime Web, Transformers.js, Web Workers.
 ```
 murmur/
 ├── packages/
-│   ├── core/        # Protocol-independent primitives (tasks, results, IDs, messages, validation)
-│   ├── client/      # Browser client (createClient({ coordinator }))
+│   ├── core/        # Protocol-independent primitives (zod schemas, tasks, results, aggregation)
+│   ├── client/      # Browser client (createClient({ coordinator, runtime }))
 │   ├── react/       # React integration (MurmurProvider, useMurmur)
 │   ├── server/      # Coordinator implementation
-│   ├── runtime/     # Model execution layer (createRuntime({ model, preferredBackend }))
-│   └── moderation/  # First high-level application (createModerator)
+│   └── runtime/     # Model execution layer — pluggable runtimes (ONNX Runtime Web via Web Worker, mock)
 │
 ├── apps/
 │   ├── demo/
 │   ├── moderation/
 │   └── dashboard/
 │
-├── models/
+├── models/          # Committed demo model (MobileNet v2 int8) + labels + fixtures
 ├── docs/
 ├── tests/
 ├── package.json
 ├── pnpm-workspace.yaml
 └── README.md
 ```
+
+### Murmur Model Runtime
+
+Executes models. `@murmur/runtime` exposes an `InferenceRuntime` interface and ships two implementations:
+
+- **`OnnxRuntime`** — ONNX Runtime Web inside a **Web Worker** (module worker, so model load + inference never block the UI). Model-agnostic: each model is configured as `{ name, modelUrl, sha256, labels, preprocessing, backend }` — swap MobileNet for any ONNX image model without touching the rest of Murmur. SHA-256 integrity verification and `Cache API` model caching are built in. WebGPU preferred when available, WASM fallback.
+- **`MockRuntime`** — deterministic pseudo-random classification for tests and development.
+
+Inference runs in the worker; the main thread decodes images (fetch → `createImageBitmap` → `ImageData`) and transfers them to the worker. The demo's `InferenceRuntime` abstraction means the coordinator/protocol never depend on a specific ML framework.
 
 ## Key interfaces
 

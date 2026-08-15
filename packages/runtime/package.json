@@ -1,7 +1,7 @@
 {
-  "name": "@murmur/react",
+  "name": "@murmur/runtime",
   "version": "0.1.0",
-  "description": "React integration for Murmur: wrap an application and give it distributed inference",
+  "description": "Model execution layer for Murmur: pluggable inference runtimes (ONNX Runtime Web, mock)",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -33,16 +33,12 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@murmur/client": "workspace:*",
     "@murmur/core": "workspace:*",
-    "@murmur/runtime": "workspace:*"
-  },
-  "peerDependencies": {
-    "react": "^18.0.0 || ^19.0.0"
+    "onnxruntime-web": "^1.27.0"
   },
   "devDependencies": {
-    "@types/react": "^18.3.0",
-    "react": "^18.3.1",
+    "@types/node": "^20.0.0",
+    "jpeg-js": "^0.4.4",
     "tsup": "^8.5.1",
     "vitest": "^4.1.10"
   }

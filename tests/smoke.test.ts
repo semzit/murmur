@@ -33,7 +33,7 @@ interface TestClient {
   send(message: unknown): void;
   register(): Promise<ClientId>;
   waitFor(predicate: (msg: ServerToClientMessage) => boolean, timeoutMs?: number): Promise<ServerToClientMessage>;
-  respondToTasks(score: number, delayMs?: number): void;
+  respondToTasks(result: unknown, delayMs?: number): void;
 }
 
 const text = (raw: RawData): string =>
@@ -87,14 +87,14 @@ const makeClient = (url: string): TestClient => {
     return id;
   };
 
-  const respondToTasks = (score: number, delayMs = 0) => {
+  const respondToTasks = (result: unknown, delayMs = 0) => {
     ws.on("message", (raw: RawData) => {
       const parsed = parseServerMessage(text(raw));
       if (!parsed.ok || parsed.message.type !== "task") return;
       const clientId = id;
       const taskId = parsed.message.task.id;
       if (!clientId) return;
-      setTimeout(() => send({ type: "result", taskId, clientId, result: score, duration: 100 }), delayMs);
+      setTimeout(() => send({ type: "result", taskId, clientId, result, duration: 100 }), delayMs);
     });
   };
 
@@ -250,5 +250,91 @@ describe("Murmur coordinator protocol", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as { status: string };
     expect(body.status).toBe("ok");
+  });
+
+  it("aggregates categorical results by majority vote", async () => {
+    const categoricalModel: ModelMetadata = {
+      ...moderationModel,
+      name: "classifier-v1",
+      aggregation: { strategy: "majority", requiredWorkers: 3 },
+    };
+    const { url } = await startServer({ models: [moderationModel, categoricalModel] });
+
+    const requester = makeClient(url);
+    clients.push(requester);
+    await requester.register();
+    requester.respondToTasks({ label: "tabby, tabby cat", score: 0.9 });
+
+    const worker1 = makeClient(url);
+    const worker2 = makeClient(url);
+    clients.push(worker1, worker2);
+    await worker1.register();
+    await worker2.register();
+    worker1.respondToTasks({ label: "tabby, tabby cat", score: 0.7 });
+    worker2.respondToTasks({ label: "golden retriever", score: 0.95 });
+
+    const completion = requester.waitFor((msg) => msg.type === "task_complete" && msg.requestId !== undefined);
+    requester.send({ type: "create_task", requestId: newRequestId(), model: "classifier-v1", input: "image:test" });
+
+    const message = await completion;
+    if (message.type !== "task_complete") throw new Error("unexpected message");
+    expect(message.final.label).toBe("tabby, tabby cat");
+    expect(message.final.value).toBeCloseTo(0.8);
+    expect(message.final.agreement).toBeCloseTo(2 / 3);
+    expect(message.final.workers).toBe(3);
+  });
+
+  it("assigns tasks only to workers matching the model runtime", async () => {
+    const onnxModel: ModelMetadata = {
+      ...moderationModel,
+      name: "onnx-model-v1",
+      runtime: "onnxruntime-web",
+      aggregation: { strategy: "mean", requiredWorkers: 1 },
+    };
+    const { url } = await startServer({ models: [moderationModel, onnxModel] });
+
+    const mockWorker = makeClient(url);
+    clients.push(mockWorker);
+    await mockWorker.register();
+
+    const onnxWorker = makeClient(url);
+    clients.push(onnxWorker);
+    const raw = onnxWorker.ws;
+    const onnxId = newClientId();
+    await new Promise<void>((resolve) => {
+      raw.once("open", () => {
+        raw.send(
+          JSON.stringify({
+            type: "hello",
+            clientId: onnxId,
+            capabilities: { backends: ["webgpu"], modelVersions: {}, runtime: "onnxruntime-web" },
+          }),
+        );
+        resolve();
+      });
+    });
+
+    const tasksSeen: string[] = [];
+    onnxWorker.ws.on("message", (data: RawData) => {
+      const parsed = parseServerMessage(text(data));
+      if (parsed.ok && parsed.message.type === "task") {
+        tasksSeen.push(parsed.message.task.model);
+        onnxWorker.send({
+          type: "result",
+          taskId: parsed.message.task.id,
+          clientId: onnxId,
+          result: 0.5,
+          duration: 10,
+        });
+      }
+    });
+
+    const completion = onnxWorker.waitFor((msg) => msg.type === "task_complete");
+    onnxWorker.send({ type: "create_task", requestId: newRequestId(), model: "onnx-model-v1", input: "image:test" });
+
+    const message = await completion;
+    if (message.type !== "task_complete") throw new Error("unexpected message");
+    expect(message.final.workers).toBe(1);
+    expect(tasksSeen).toEqual(["onnx-model-v1"]);
   });
 });

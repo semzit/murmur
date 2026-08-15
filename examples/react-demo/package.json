@@ -11,6 +11,7 @@
     "@murmur/client": "workspace:*",
     "@murmur/core": "workspace:*",
     "@murmur/react": "workspace:*",
+    "@murmur/runtime": "workspace:*",
     "@murmur/server": "workspace:*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

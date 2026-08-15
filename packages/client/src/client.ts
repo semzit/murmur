@@ -8,8 +8,7 @@ import type {
   WorkerInfo,
 } from "@murmur/core";
 import { newClientId, newRequestId, parseServerMessage, type ClientToServerMessage } from "@murmur/core";
-import type { InferenceRuntime } from "./runtime.ts";
-import { MockRuntime } from "./runtime.ts";
+import { MockRuntime, type InferenceRuntime, type RuntimeStatus } from "@murmur/runtime";
 import { canRunTask, type ResourcePolicies } from "./policies.ts";
 
 export type MurmurStatus = "idle" | "connecting" | "registered" | "disconnected";
@@ -40,6 +39,7 @@ export type ClientEvent =
   | { type: "result"; result: InferenceResult }
   | { type: "complete"; final: FinalResult }
   | { type: "task_failed"; taskId: string; reason: string }
+  | { type: "runtime_status"; status: RuntimeStatus }
   | { type: "disconnect"; reason?: string };
 
 interface PendingRequest {
@@ -138,6 +138,7 @@ export function createClient(options: MurmurClientOptions): MurmurClient {
     activeTasks++;
     try {
       await runtime.load(task.model);
+      if (runtime.status) emit({ type: "runtime_status", status: runtime.status });
       const started = performance.now();
       const { output, duration } = await runtime.infer(task.input);
       const measured = duration > 0 ? duration : performance.now() - started;

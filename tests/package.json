@@ -15,7 +15,9 @@
     "@murmur/server": "workspace:*"
   },
   "devDependencies": {
+    "@murmur/runtime": "workspace:^",
     "@types/ws": "^8.5.0",
+    "jpeg-js": "^0.4.4",
     "tsx": "^4.19.0",
     "vitest": "^4.1.10",
     "ws": "^8.18.0"

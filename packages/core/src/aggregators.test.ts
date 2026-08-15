@@ -89,6 +89,67 @@ describe("createAggregator", () => {
   });
 });
 
+describe("finalizeResult with majority strategy", () => {
+  const config: AggregationConfig = { strategy: "majority", requiredWorkers: 3 };
+
+  const votes = (entries: Array<{ label: string; score: number }>) =>
+    entries.map(({ label, score }, i) => ({
+      taskId: "t" as unknown as InferenceResult["taskId"],
+      clientId: newClientId(),
+      model: "moderation-v1",
+      output: { label, score },
+      duration: 100 + i,
+    }));
+
+  it("picks the label with the most votes", () => {
+    const final = finalizeResult(
+      config,
+      votes([
+        { label: "tabby, tabby cat", score: 0.9 },
+        { label: "tabby, tabby cat", score: 0.7 },
+        { label: "golden retriever", score: 0.95 },
+      ]),
+    );
+    expect(final.label).toBe("tabby, tabby cat");
+    expect(final.value).toBeCloseTo(0.8);
+    expect(final.agreement).toBeCloseTo(2 / 3);
+    expect(final.workers).toBe(3);
+  });
+
+  it("breaks ties by mean confidence", () => {
+    const final = finalizeResult(
+      config,
+      votes([
+        { label: "cat", score: 0.5 },
+        { label: "cat", score: 0.5 },
+        { label: "dog", score: 0.6 },
+        { label: "dog", score: 0.6 },
+        { label: "dog", score: 0.99 },
+        { label: "dog", score: 0.6 },
+      ]),
+    );
+    expect(final.label).toBe("dog");
+  });
+
+  it("handles unanimous results with full agreement", () => {
+    const final = finalizeResult(
+      config,
+      votes([
+        { label: "tabby, tabby cat", score: 0.8 },
+        { label: "tabby, tabby cat", score: 0.85 },
+        { label: "tabby, tabby cat", score: 0.9 },
+      ]),
+    );
+    expect(final.label).toBe("tabby, tabby cat");
+    expect(final.agreement).toBe(1);
+  });
+
+  it("throws when no results carry a label", () => {
+    const results = makeResults("task-5", [1, 2, 3]);
+    expect(() => finalizeResult(config, results)).toThrow();
+  });
+});
+
 describe("ids", () => {
   it("generates unique ids", () => {
     expect(newTaskId()).not.toBe(newTaskId());
