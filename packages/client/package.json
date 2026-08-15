@@ -1,0 +1,43 @@
+{
+  "name": "@murmur/client",
+  "version": "0.1.0",
+  "description": "Browser client for the Murmur network",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@murmur/core": "workspace:*"
+  },
+  "devDependencies": {
+    "jsdom": "^26.0.0",
+    "tsup": "^8.5.1",
+    "vitest": "^4.1.10"
+  }
+}

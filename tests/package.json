@@ -1,0 +1,23 @@
+{
+  "name": "tests",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "lint": "eslint smoke.test.ts"
+  },
+  "dependencies": {
+    "@murmur/core": "workspace:*",
+    "@murmur/server": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.0",
+    "tsx": "^4.19.0",
+    "vitest": "^4.1.10",
+    "ws": "^8.18.0"
+  }
+}
